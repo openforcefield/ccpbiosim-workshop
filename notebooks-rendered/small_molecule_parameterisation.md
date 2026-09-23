@@ -95,7 +95,7 @@ view
     
 
 
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
       warnings.warn("DCDReader currently makes independent timesteps"
 
 
@@ -125,7 +125,7 @@ sage
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7ff591bf1e50>
+    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7f9a04273750>
 
 
 
@@ -147,7 +147,7 @@ vdw_handler
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7ff591bf2710>
+    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7f9a039af610>
 
 
 
@@ -184,7 +184,7 @@ vdw_type
 
 Note that the type contains both the physical parameters (sigma and epsilon, for a conventional 12-6 Lennard-Jones potential), but also an associated SMIRKS pattern. This particular SMIRKS pattern is fairly simple, but some can get much more complex.
 
-The toolkit uses these SMIRKS patterns and direct chemical perception to assign parameters to particular atoms (or bonds, angles, etc.).
+The toolkit uses these SMIRKS patterns and [direct chemical perception](http://doi.org/10.1021/acs.jctc.8b00640) to assign parameters to particular atoms (or bonds, angles, etc.).
 
 We'll use OpenFF 2.3.0 for the remainder of this tutorial. This is OpenFF's latest small molecule force field and is a leading open-source small molecule force field which [performs comparably to other open-source force fields](https://doi.org/10.1021/acs.jctc.3c00039). You can learn more about this and other SMIRNOFF force fields below:
 <details>
@@ -349,7 +349,7 @@ topology_with_water.molecule(0), topology_with_water.molecule(1), topology_with_
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
-    ✏️ <b>Exercise:</b> Build a <code>Topology</code> containing an MCL-1 ligand. Create the <code>Molecule</code> from an SDF file  (take a look at the docstring of <code>Molecule</code> to see how this can be done, noting that you can just pass the sdf path given below and don't need the <code>get_data_file_path</code> function). Also, see <a href="https://docs.openforcefield.org/projects/toolkit/en/stable/users/molecule_cookbook.html">Molecule cookbook</a> for all the ways to make a <code>Molecule</code>. The crystallographic MCL-1 ligand from PDB ID 6o6f is provided at <code>../structures/6o6f_ligand.sdf</code>. Note that you don't need to use <code>get_data_file_path</code> as we already know the path.
+    ✏️ <b>Exercise:</b> Build a <code>Topology</code> containing an MCL-1 ligand. Create the <code>Molecule</code> from an SDF file  (take a look at the docstring of <code>Molecule</code> to see how this can be done, noting that you can just pass the sdf path given below and don't need the <code>get_data_file_path</code> function). Also, see <a href="https://docs.openforcefield.org/projects/toolkit/en/stable/users/molecule_cookbook.html">Molecule cookbook</a> for all the ways to make a <code>Molecule</code>. The crystallographic MCL-1 ligand from PDB ID 6o6f is provided at <code>../structures/6o6f_ligand.sdf</code>.
 </div>
 
 
@@ -556,7 +556,7 @@ for topology_key, potential_key in collection.key_map.items():
     atom_indices=(3, 5) bond_order=None -> parameters={'k': <Quantity(1141.6952, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.25831056, 'angstrom')>} map_key=None
 
 
-So our C=C bond (indices (1,2)) has a force constant of 904 kcal mol<sup>-1</sup> Å<sup>-2</sup> and an equilibrium bond length of 1.37 Å. Note that the [`ForceField.label_molecules`](https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.typing.engines.smirnoff.ForceField.html#openff.toolkit.typing.engines.smirnoff.ForceField.label_molecules) method is also useful for checking which parameters will be applied to your molecule.
+So our C=C bond (indices (1,2)) has a force constant of 911 kcal mol<sup>-1</sup> Å<sup>-2</sup> and an equilibrium bond length of 1.37 Å. Note that the [`ForceField.label_molecules`](https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.typing.engines.smirnoff.ForceField.html#openff.toolkit.typing.engines.smirnoff.ForceField.label_molecules) method is also useful for checking which parameters will be applied to your molecule.
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
     ✏️ <b>Exercise:</b> Have a look at the "Angles", "ProperTorsions", and "ImproperTorsions" applied. Where are the "ImproperTorsions" applied and why?
@@ -632,17 +632,17 @@ interchange.positions, interchange.box, interchange.velocities
 
 
 
-    (<Quantity([[-0.16884651 -0.03204099  0.02797506]
-      [-0.02695262 -0.04551754 -0.01496804]
-      [ 0.05777792  0.05074697  0.01721889]
-      [ 0.19690544  0.03719656 -0.02507113]
-      [ 0.23595445 -0.06303954 -0.09039396]
-      [ 0.29175033  0.13419756  0.00498716]
-      [-0.1829386   0.05336654  0.09439656]
-      [-0.23077479 -0.01166554 -0.06346681]
-      [-0.20531354 -0.1285518   0.07293682]
-      [ 0.00522258 -0.13138426 -0.0706145 ]
-      [ 0.02721534  0.13669204  0.07249894]], 'nanometer')>,
+    (<Quantity([[-0.16625724 -0.03479796  0.03784039]
+      [-0.02430486 -0.05201537 -0.00451867]
+      [ 0.05602012  0.05265773  0.00395499]
+      [ 0.19528189  0.0415208  -0.03596997]
+      [ 0.24343788 -0.06635438 -0.0792721 ]
+      [ 0.27953385  0.15166106 -0.02698393]
+      [-0.18045701  0.05218856  0.10358396]
+      [-0.22554747 -0.01299133 -0.05515606]
+      [-0.20445106 -0.12934557  0.08217001]
+      [ 0.00920345 -0.14767732 -0.04048902]
+      [ 0.01754047  0.14515378  0.04033941]], 'nanometer')>,
      None,
      None)
 
@@ -697,9 +697,9 @@ At this point, we could easily export input files for our simulation engine of c
 interchange.to_amber(prefix="ligand")
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
       warnings.warn(
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:434: SwitchingFunctionNotImplementedWarning: A switching distance 8.0 angstrom was specified by the force field, but Amber does not implement a switching function. Using a hard cut-off instead. Non-bonded interactions will be affected.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/openff/interchange/components/mdconfig.py:434: SwitchingFunctionNotImplementedWarning: A switching distance 8.0 angstrom was specified by the force field, but Amber does not implement a switching function. Using a hard cut-off instead. Non-bonded interactions will be affected.
       warnings.warn(
 
 
@@ -766,12 +766,12 @@ run_openmm(interchange)
 visualise_traj(interchange.topology)
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
       warnings.warn("DCDReader currently makes independent timesteps"
 
 
 
-    NGLWidget(max_frame=25)
+    NGLWidget(max_frame=29)
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
@@ -811,8 +811,8 @@ sage221 = ForceField("openff-2.2.1.offxml")
 interchange_sage221 = Interchange.from_smirnoff(force_field=sage221, topology=molecule.to_topology())
 ```
 
-    CPU times: user 245 ms, sys: 6.57 ms, total: 252 ms
-    Wall time: 14.9 s
+    CPU times: user 235 ms, sys: 5.69 ms, total: 240 ms
+    Wall time: 17.7 s
 
 
 Note that repeating these cells will show much faster assignment as partial charges are cached for a given molecule and charge method.
@@ -826,8 +826,8 @@ sage230 = ForceField("openff-2.3.0.offxml")
 interchange_sage230 = Interchange.from_smirnoff(force_field=sage230, topology=molecule.to_topology())
 ```
 
-    CPU times: user 1.29 s, sys: 20.6 ms, total: 1.31 s
-    Wall time: 1.25 s
+    CPU times: user 1.01 s, sys: 26.5 ms, total: 1.03 s
+    Wall time: 967 ms
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">

@@ -96,7 +96,7 @@ Conceptually, this step involves putting together the positions of all of the co
 
 First, we'll load the ligand and receptor into OpenFF Toolkit [`Molecule`] objects, which keep track of all their chemical information. As discussed previously, `Molecule` represents a collection of atoms with specified formal charges, connected by bonds with specified bond orders, optionally including any number of conformer coordinates. This is intended to closely align with a chemist's intuitive understanding of a molecule, rather than simply wrap the minimal information needed for a calculation.
 
-SDF files include all a molecule's bond orders and formal charges, as well as coordinates, so they're ideal as a format for distributing small molecules. And that's exactly the format the ligand is stored in!
+Structure data files (SDFs) include all a molecule's bond orders and formal charges, as well as coordinates, so they're ideal as a format for distributing small molecules. And that's exactly the format the ligand is stored in!
 
 [`Molecule`]: https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.topology.Molecule.html
 
@@ -126,7 +126,7 @@ ligand.visualize(show_all_hydrogens=False)
 
 
 
-Conventionally, SDF files are used for ligands and PDB files are used for proteins. The toolkit loads polymers (including biopolymers such as proteins) via PDB files by inferring chemical information from the file and a known dictionary of common residues (and water, and ions). To do this, we'll use `Topology.from_pdb`
+Conventionally, SDFs are used for ligands and PDB files are used for proteins. The toolkit loads polymers (including biopolymers such as proteins) via PDB files by inferring chemical information from the file and a known dictionary of common residues (and water, and ions). To do this, we'll use `Topology.from_pdb`
 
 
 ```python
@@ -268,7 +268,7 @@ For example, we can write out GROMACS `complex.gro` and `complex.top` files with
 interchange.to_gromacs(prefix="complex")
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
       warnings.warn(
 
 
@@ -359,10 +359,10 @@ describe_state(
 )
 ```
 
-    Original state has energy 14441273.68 kJ/mol with maximum force 1367208975.66 kJ/(mol nm)
+    Original state has energy 14441273.68 kJ/mol with maximum force 1367209099.85 kJ/(mol nm)
 
 
-    Minimized state has energy -436658.5 kJ/mol with maximum force 2427.9 kJ/(mol nm)
+    Minimized state has energy -436648.18 kJ/mol with maximum force 2445.53 kJ/(mol nm)
 
 
 ### 4.3 Run a short simulation
@@ -422,7 +422,7 @@ view.add_representation("line", selection="protein")
 view
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+    /opt/conda/envs/openff-env/lib/python3.13/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
       warnings.warn("DCDReader currently makes independent timesteps"
 
 
@@ -638,7 +638,7 @@ df = fp.to_dataframe()
 ```
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
-    ✏️ <b>Exercise:</b> Repeat this entire notebook using a ligand docked to MCL-1. (Hint: You'll need to convert the pdbqt files to sdf files using obabel, adding protons as appropriate for pH 7. This will look something like <code>obabel docked_ligand.pdbqt -opdb | obabel -ipdb -osdf -p 7.0 -O docked_ligand.sdf</code>. Make sure to use the docked coordinates! An example docked pdbqt file is provided at <code>../structures/docked_ligand.pdbqt</code>) Is the binding pose stable? Are similar interactions formed by the docked ligand and the crystallographic ligand? Which do you think is likely to bind more strongly? What would be required to answer these questions robustly?
+    ✏️ <b>Exercise:</b> Repeat this entire notebook using a ligand docked to MCL-1. (Hint: You'll need to convert the pdbqt files to SDFs using obabel, adding protons as appropriate for pH 7. This will look something like <code>obabel docked_ligand.pdbqt -opdb | obabel -ipdb -osdf -p 7.0 -O docked_ligand.sdf</code>. Make sure to use the docked coordinates! An example docked pdbqt file is provided at <code>../structures/docked_ligand.pdbqt</code>) Is the binding pose stable? Are similar interactions formed by the docked ligand and the crystallographic ligand? Which do you think is likely to bind more strongly? What would be required to answer these questions robustly?
 </div>
 
 
