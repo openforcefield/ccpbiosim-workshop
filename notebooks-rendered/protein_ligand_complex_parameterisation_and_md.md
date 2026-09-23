@@ -78,10 +78,6 @@ view
     
 
 
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/nglview/__init__.py:12: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
-      import pkg_resources
-
-
 
     NGLWidget()
 
@@ -94,7 +90,7 @@ view
 <a id="assemble"></a>
 ## 2. OpenFF Toolkit Allows Us to Assemble the Topology
 
-Conceptually, this step involves putting together the positions of all of the components of the system. We'll create  a [`Topology`] to keep track of the contents of our system. As discussed in this morning's session, `Topology` represents a collection of molecules; it doesn't have any association with any force field parameters.
+Conceptually, this step involves putting together the positions of all of the components of the system. We'll create  a [`Topology`] to keep track of the contents of our system. As discussed in the previous notebook, `Topology` represents a collection of molecules; it doesn't have any association with any force field parameters.
 
 [`Topology`]: https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.topology.Topology.html
 
@@ -220,14 +216,14 @@ view
 <a id="parameterise"></a>
 ## 3. We Can Assemble a Combined `ForceField` and use this to Parameterise the Whole System
 
-Now that we've prepared our coordinates, we should choose the force field. For now, we don't have any single SMIRNOFF force field that can handle both proteins and small molecules; the Rosemary 3.0.0 force field will support this, but it's not yet ready. As an alternative, we'll combine the AMBER-compatible [Sage] small molecule force field with the SMIRNOFF port of AMBER ff14SB. Note that Sage also includes the TIP3P water model, which is appropriate for AMBER ff14SB too.
+Now that we've prepared our coordinates, we should choose the force field. For now, we don't have any single SMIRNOFF force field that can handle both proteins and small molecules. The Rosemary line of force fields (starting with `openff-3.0.0.offxml`) is intended to do exactly this. A pre-release version, [`openff_no_water-3.0.0-alpha0.offxml`](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff_no_water-3.0.0-alpha0.offxml), is already available for testing (if you use it, see [the release notes](https://github.com/openforcefield/openff-forcefields/releases/tag/2025.10.1)). There is no specific release date planned for the first full version, but it may be available later in 2026. As an alternative, we'll combine the AMBER-compatible [Sage] small molecule force field with the SMIRNOFF port of AMBER ff14SB. Note that Sage also includes the TIP3P water model, which is appropriate for AMBER ff14SB too.
 
 When we combine multiple SMIRNOFF force fields into one, we provide them in an order from general to specific. Sage includes parameters that could be applied to a protein, but they're general across all molecules; ff14SB's parameters are specific to proteins. Since the Toolkit always applies the last parameters that match a moiety, this order makes sure the right parameters get assigned.
 
 [Sage]: https://openforcefield.org/force-fields/force-fields/#sage
 
 <div class="alert alert-warning" style="max-width: 700px; margin-left: auto; margin-right: auto;">
-⚠️ Warning: If your small molecule has an amino acid substructure in it, the specific patterns in the ff14SB force field will override the general ones from openff-2.2.1.offxml. This is the SMIRNOFF format being applied correctly, but some users may find this surprising, especially since terminal caps like ACE and NME are relatively small substructures and will sometimes appear in ligands.
+⚠️ Warning: If your small molecule has an amino acid substructure in it, the specific patterns in the ff14SB force field will override the general ones from openff-2.3.0.offxml. This is the SMIRNOFF format being applied correctly, but some users may find this surprising, especially since terminal caps like ACE and NME are relatively small substructures and will sometimes appear in ligands.
 </div>
 
 
@@ -236,12 +232,12 @@ When we combine multiple SMIRNOFF force fields into one, we provide them in an o
 from openff.toolkit import ForceField
 
 # Assemble the combined force field
-sage_ff14sb = ForceField("openff-2.2.1.offxml", "ff14sb_off_impropers_0.0.3.offxml")
+sage_ff14sb = ForceField("openff-2.3.0.offxml", "ff14sb_off_impropers_0.0.3.offxml")
 ```
 
-We now have a `Topology`, which stores the chemical information of the system, and a `ForceField`, which maps chemistry to force field parameters. To parametrize the system, we combine these two objects into an [`Interchange`], as discussed in this morning's session.
+We now have a `Topology`, which stores the chemical information of the system, and a `ForceField`, which maps chemistry to force field parameters. To parametrize the system, we combine these two objects into an [`Interchange`], as discussed in the previous notebook.
 
-An `Interchange` represents a completely parameterised molecular mechanics system. Partial charges are computed here according to the instructions in the force field, and this is where virtual sites required by the force field will be introduced. This all happens behind the scenes; all we have to do is combine an abstract chemical description with a force field. This makes it easy to change water model or force field, as the chemistry being modelled is completely independent of the model itself.
+An `Interchange` represents a completely parameterised molecular mechanics system. Partial charges are computed here according to the instructions in the force field: Sage 2.3.0 assigns the ligand's charges with the AshGC graph neural network model (see section 4 of the previous notebook), while ff14SB supplies library charges for the protein, water, and ions. This is also where virtual sites required by the force field will be introduced. This all happens behind the scenes; all we have to do is combine an abstract chemical description with a force field. This makes it easy to change water model or force field, as the chemistry being modelled is completely independent of the model itself.
 
 [`Interchange`]: https://docs.openforcefield.org/projects/interchange/en/stable/_autosummary/openff.interchange.components.interchange.Interchange.html
 
@@ -250,9 +246,9 @@ An `Interchange` represents a completely parameterised molecular mechanics syste
 interchange = sage_ff14sb.create_interchange(topology)
 ```
 
-*(This should take about a minute, largely because of the complexity of the AMBER protein force field port. In the future, this should be faster.)*
+*(This should take well under a minute, most of it spent on the chemical perception required by the AMBER protein force field port. It used to be considerably slower: assigning the ligand's AM1-BCC charges was the bottleneck, and AshGC has removed it.)*
 
-While that runs, let's recap. We've constructed a `Topology` out of a number of `Molecule` objects, each of which represents a particular chemical independent of any model details. The `Topology` then represents an entire chemical system, which in theory could be modelled in any number of ways. Our `Topology` also includes atom positions and box vectors, but if we thought that was too concrete for our use case we could leave them out and add them after parameterisation.
+Before we simulate, let's recap. We've constructed a `Topology` out of a number of `Molecule` objects, each of which represents a particular chemical independent of any model details. The `Topology` then represents an entire chemical system, which in theory could be modelled in any number of ways. Our `Topology` also includes atom positions and box vectors, but if we thought that was too concrete for our use case we could leave them out and add them after parameterisation.
 
 Separately, we've constructed a `ForceField` by combining a general SMIRNOFF force field with a protein-specific SMIRNOFF force field. A SMIRNOFF force field is a bunch of rules for applying force field parameters to chemicals via SMARTS patterns. The force field includes everything needed to compute an energy: parameters, charges, functional forms, non-bonded methods and cutoffs, virtual sites, and so on.
 
@@ -272,8 +268,23 @@ For example, we can write out GROMACS `complex.gro` and `complex.top` files with
 interchange.to_gromacs(prefix="complex")
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/openff/interchange/components/mdconfig.py:502: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
       warnings.warn(
+
+
+
+```python
+# Check the new gromacs output
+!ls
+```
+
+    complex.gro
+    complex.top
+    complex_pointenergy.mdp
+    protein_ligand_complex_parameterisation_and_md.ipynb
+    small_molecule_parameterisation.ipynb
+    topology.json
+    trajectory_gpu.dcd
 
 
 
@@ -288,7 +299,7 @@ All that remains is to tell OpenMM the details about how we want to integrate an
 
 ### 4.1 Configure and run the simulation
 
-Here, we'll use a Langevin thermostat at 300 Kelvin and a 2 fs time step. We'll write the structure to disk every 10 steps. In contrast to the previous notebook, we'll add a MonteCarloBarostat to fix the pressure, while allowing the volume to fluctuate. Our simulation corresponds to the $NPT$ ensemble.
+Here, we'll use a Langevin thermostat at 300 Kelvin and a 2 fs time step. We'll write the structure to disk every 50 steps. In contrast to the previous notebook, we'll add a MonteCarloBarostat to fix the pressure, while allowing the volume to fluctuate. Our simulation corresponds to the $NPT$ ensemble.
 
 
 ```python
@@ -299,8 +310,8 @@ PRESSURE = 1 * openmm.unit.atmosphere
 FRICTION_COEFFICIENT = 1 / openmm.unit.picosecond
 TIMESTEP = 0.002 * openmm.unit.picoseconds
 
-# Construct and configure a LangevinMiddleIntegrator at 300 K with an appropriate friction constant and time-step
-integrator = openmm.LangevinMiddleIntegrator(
+# Construct and configure a LangevinIntegrator at 300 K with an appropriate friction constant and time-step
+integrator = openmm.LangevinIntegrator(
     TEMPERATURE,
     FRICTION_COEFFICIENT,
     TIMESTEP,
@@ -348,10 +359,10 @@ describe_state(
 )
 ```
 
-    Original state has energy 14441301.95 kJ/mol with maximum force 1367209099.85 kJ/(mol nm)
+    Original state has energy 14441273.68 kJ/mol with maximum force 1367208975.66 kJ/(mol nm)
 
 
-    Minimized state has energy -434035.42 kJ/mol with maximum force 2426.16 kJ/(mol nm)
+    Minimized state has energy -436658.5 kJ/mol with maximum force 2427.9 kJ/(mol nm)
 
 
 ### 4.3 Run a short simulation
@@ -411,7 +422,7 @@ view.add_representation("line", selection="protein")
 view
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
       warnings.warn("DCDReader currently makes independent timesteps"
 
 
@@ -468,7 +479,7 @@ ax.set_ylabel(r'RMSD (Å)')
 
 
     
-![png](output_39_1.png)
+![png](output_40_1.png)
     
 
 
@@ -519,7 +530,7 @@ ax.set_ylabel(r'RMSD (Å)')
 
 
     
-![png](output_41_1.png)
+![png](output_42_1.png)
     
 
 
@@ -627,7 +638,7 @@ df = fp.to_dataframe()
 ```
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
-    ✏️ <b>Exercise:</b> Repeat this entire notebook using a ligand from docked to MCL-1 during this morning's session. (Hint: You'll need to convert the pdbqt files to sdf files using obabel, adding protons as appropriate for pH 7. This will look something like <code>obabel docked_ligand.pdbqt -opdb | obabel -ipdb -osdf -p 7.0 -O docked_ligand.sdf</code>. Make sure to use the docked coordinates! An example docked pdbqt file is provided at <code>../structures/docked_ligand.pdbqt</code>) Is the binding pose stable? Are similar interactions formed by the docked ligand and the crystallographic ligand? Which do you think is likely to bind more strongly? What would be required to answer these questions robustly?
+    ✏️ <b>Exercise:</b> Repeat this entire notebook using a ligand docked to MCL-1. (Hint: You'll need to convert the pdbqt files to sdf files using obabel, adding protons as appropriate for pH 7. This will look something like <code>obabel docked_ligand.pdbqt -opdb | obabel -ipdb -osdf -p 7.0 -O docked_ligand.sdf</code>. Make sure to use the docked coordinates! An example docked pdbqt file is provided at <code>../structures/docked_ligand.pdbqt</code>) Is the binding pose stable? Are similar interactions formed by the docked ligand and the crystallographic ligand? Which do you think is likely to bind more strongly? What would be required to answer these questions robustly?
 </div>
 
 
@@ -644,16 +655,18 @@ df = fp.to_dataframe()
 * Using OpenMM, we never had to leave Python to set up the simulation.
 * With Interchange, using OpenMM, GROMACS, Amber or LAMMPS is simple!
 * MDAnalysis and ProLIF allows us to perform varied analyses of our trajectories.
+* The Rosemary force field is likely coming soon, and will allow easy set-up of simulations with post-translationally modified proteins. Check out [this workshop](https://github.com/openforcefield/2026-virtual-workshops/blob/main/ptm/ptm-workshop.ipynb)!
 
 <a id="further_materials"></a>
 ## 7. There's Lots More to OpenFF!
 
 A variety of example notebooks for OpenFF software are provided [here](https://docs.openforcefield.org/en/latest/examples.html). A few which are particularly relevant are:
 
+- [Simulating Post-Translationally Modified Proteins with the OpenFF Rosemary Alpha](https://github.com/openforcefield/2026-virtual-workshops/blob/main/ptm/ptm-workshop.ipynb)
 - [Host-guest systems](https://docs.openforcefield.org/en/latest/examples/openforcefield/openff-interchange/host-guest/host_guest.html)
 - [Protein-ligand-water systems with Interchange](https://docs.openforcefield.org/en/latest/examples/openforcefield/openff-interchange/protein_ligand/protein_ligand.html). This has a lot of overlap with the current notebook, but there are several extra details not covered here.
 
 <a id="further_non_openff_materials"></a>
 ## 8. Beyond OpenFF
 
-You can parameterise your complex and run molecular dynamics -- so what's next? If you're interested in quantiatively assessing the binding affinity of your ligand for your target, then [alchemical (and path-based) free energy calculations are the gold-standard method](https://www.nature.com/articles/s42004-023-01019-9). [Open Free Energy](https://openfree.energy/) is another [Open Molecular Software Foundation](https://omsf.io/) initiative, which develops open-source tools for binding free energy calculations. Head to their [tutorials](https://docs.openfree.energy/en/latest/tutorials/index.html) to learn more! However, these calculations are computationally demanding. If you're interested in a relatively fast (but relatively inaccurate) ranking of the binding affinities of a set of ligands, methods such as MM/GBSA may be appropriate.
+You can parameterise your complex and run molecular dynamics -- so what's next? If you're interested in quantitatively assessing the binding affinity of your ligand for your target, then [alchemical (and path-based) free energy calculations are the gold-standard method](https://livecomsjournal.org/index.php/livecoms/article/view/v2i1e18378). [Open Free Energy](https://openfree.energy/) is another [Open Molecular Software Foundation](https://omsf.io/) initiative, which develops open-source tools for binding free energy calculations. However, these calculations are computationally demanding. If you're interested in a relatively fast (but relatively inaccurate) ranking of the binding affinities of a set of ligands, methods such as MM/GBSA may be appropriate. Affinity prediction methods based on deep learning such as Boltz-2 are appealingly fast, [but perform poorly on systems dissimilar to those they are trained on, and often show inflated performance on benchmarks due to data leakage](https://www.biorxiv.org/content/10.64898/2026.06.29.735309v1.abstract).

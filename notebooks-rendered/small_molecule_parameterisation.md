@@ -11,9 +11,10 @@ This is the first of two jupyter notebooks on handling force fields using [Open 
 
 | Action | Software|
 |--|--|
+| [Go from SMILES to simulation in a few lines of code](#showcase) | OpenFF Toolkit, OpenFF Interchange, OpenMM
 | [Load and inspect a force field](#loading_ff) | OpenFF Toolkit
 | [Create a representation of your chemical system](#topology) | OpenFF Toolkit
-| [Parameterise your system and run a quick simulation](#interchange) | OpenFF Interchange, OpenMM
+| [Parameterise your system and run a quick simulation in water](#interchange) | OpenFF Interchange, OpenMM
 | [Rapidly assign partial charges with a graph neural network model](#gnn_charges) | OpenFF Toolkit, OpenFF NAGL Models
 | [Review what you've learnt](#summary) | 
 | [Check out other OpenFF tutorials](#further_materials) | 
@@ -33,27 +34,102 @@ Most of this material was adapted from the [2023 CCPBioSim Workshop Open Force F
 
 
 
+<a id="showcase"></a>
+## 0. You can go from SMILES to simulation in a few lines of code
+
+
+```python
+# Go from SMILES -> simulation input with OpenFF
+from openff.toolkit import ForceField, Molecule, Topology
+
+molecule = Molecule.from_smiles("CC(=O)Nc1ccc(cc1)O")
+molecule.generate_conformers(n_conformers=1)
+topology = Topology.from_molecules([molecule])
+
+force_field = ForceField("openff-2.3.0.offxml")
+interchange = force_field.create_interchange(topology)
+interchange.minimize()
+
+openmm_system = interchange.to_openmm_system()
+openmm_topology = interchange.to_openmm_topology()
+openmm_positions = interchange.positions.to_openmm()
+```
+
+
+```python
+# Run the simulation with OpenMM
+import openmm
+import openmm.app
+
+temperature = 298.15 * openmm.unit.kelvin
+friction_coefficient = 1.0 / openmm.unit.picosecond
+step_size = 2.0 * openmm.unit.femtosecond
+
+simulation = openmm.app.Simulation(
+    openmm_topology,
+    openmm_system,
+    openmm.LangevinIntegrator(temperature, friction_coefficient, step_size),
+)
+simulation.context.setPositions(openmm_positions)
+simulation.context.setVelocitiesToTemperature(simulation.integrator.getTemperature())
+
+simulation.reporters.append(
+    openmm.app.DCDReporter(file="trajectory_showcase.dcd", reportInterval=100)
+)
+simulation.step(10000)
+```
+
+
+```python
+# Load the trajectory with MDAnalysis and visualise with nglview
+import MDAnalysis as mda
+import nglview
+
+u = mda.Universe(openmm_topology, "trajectory_showcase.dcd")
+
+view = nglview.show_mdanalysis(u)
+view
+```
+
+
+    
+
+
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+      warnings.warn("DCDReader currently makes independent timesteps"
+
+
+
+    NGLWidget(max_frame=99)
+
+
+That's it! You've run a vacuum simulation for paracetamol. Below and in the next notebook, we'll go into more detail on each of the steps in the OpenFF cell and show how you can set up more complex systems, but this is mainly for your understanding and you rarely need much more code than shown above.
+
 <a id="loading_ff"></a>
 ## 1. Force fields are specified in `.offxml` files and can be loaded with the `ForceField` class
 
-OpenFF's force fields use the The SMIRKS Native Open Force Field (SMIRNOFF) [specification](https://openforcefield.github.io/standards/standards/smirnoff/) and are conventionally encoded in `.offxml` files. The spec fully describes the contents of a SMIRNOFF force field, how parameters should be applied, and several other important usage details. You could implement a SMIRNOFF engine in your own code, but conveniently the OpenFF Toolkit already provides this and a handful of utilities. Let's load up the latest OpenFF small molecule force field, OpenFF 2.2.1, and inspect its contents! This force field shares the code name "Sage" with all other force fields with the same major version number (2.x.x).
+Let's dive into the details of what went on above. Here's a summary of how data flows through a workflow utilising OpenFF tools -- the OpenFF toolkit allows you to create `Molecule` and `ForceField` objects, which get combined into an `Interchange` object, which contains all the information needed to start a simulation. From there, you can create input for the simulation engine of your choice:
+
+<img src="../images/openff_flowchart.png" alt="Description of image" style="max-width: 1000px; display: block; margin-left: auto; margin-right: auto;" />
+
+Let's start with the `.offxml` force field file. OpenFF's force fields use the SMIRKS Native Open Force Field (SMIRNOFF) [specification](https://openforcefield.github.io/standards/standards/smirnoff/). The spec fully describes the contents of a SMIRNOFF force field, how parameters should be applied, and several other important usage details. You could implement a SMIRNOFF engine in your own code, but conveniently the OpenFF Toolkit already provides this and a handful of utilities. Let's load up the latest OpenFF small molecule force field, OpenFF 2.3.0, and inspect its contents! This force field shares the code name "Sage" with all other force fields with the same major version number (2.x.x).
 
 
 ```python
 from openff.toolkit import ForceField
 
-sage = ForceField("openff-2.2.1.offxml")
+sage = ForceField("openff-2.3.0.offxml")
 sage
 ```
 
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7f2f3a070da0>
+    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7ff591bf1e50>
 
 
 
-If you'd like to see the raw file on disk that's being parsed, [here's the file on GitHub](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.2.1.offxml).
+If you'd like to see the raw file on disk that's being parsed, [here's the file on GitHub](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.3.0.offxml).
 
 Each section of a force field is stored in memory within `ParameterHandler` objects, which can be looked up with brackets (just like looking up values in a dictionary):
 
@@ -65,13 +141,13 @@ vdw_handler = sage["vdW"]
 vdw_handler
 ```
 
-    ['Constraints', 'Bonds', 'Angles', 'ProperTorsions', 'ImproperTorsions', 'vdW', 'Electrostatics', 'LibraryCharges', 'ToolkitAM1BCC']
+    ['Constraints', 'Bonds', 'Angles', 'ProperTorsions', 'ImproperTorsions', 'vdW', 'Electrostatics', 'LibraryCharges', 'NAGLCharges']
 
 
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7f2f381b4cb0>
+    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7ff591bf2710>
 
 
 
@@ -88,7 +164,7 @@ print(f"vdw_handler parameters: {vdw_handler.parameters}")
     vdw_handler cutoff: 9.0 angstrom
     vdw_handler combining rules: Lorentz-Berthelot
     vdw_handler scale14: 0.5
-    vdw_handler parameters: [<vdWType with smirks: [#1:1]  epsilon: 0.0157 kilocalorie / mole  id: n1  rmin_half: 0.6 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]  epsilon: 0.01577948280971 kilocalorie / mole  id: n2  rmin_half: 1.48419980825 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]-[#7,#8,#9,#16,#17,#35]  epsilon: 0.01640924602775 kilocalorie / mole  id: n3  rmin_half: 1.449786411317 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4](-[#7,#8,#9,#16,#17,#35])-[#7,#8,#9,#16,#17,#35]  epsilon: 0.0157 kilocalorie / mole  id: n4  rmin_half: 1.287 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4](-[#7,#8,#9,#16,#17,#35])(-[#7,#8,#9,#16,#17,#35])-[#7,#8,#9,#16,#17,#35]  epsilon: 0.0157 kilocalorie / mole  id: n5  rmin_half: 1.187 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]~[*+1,*+2]  epsilon: 0.0157 kilocalorie / mole  id: n6  rmin_half: 1.1 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3]  epsilon: 0.01561134320353 kilocalorie / mole  id: n7  rmin_half: 1.443812569645 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3]~[#7,#8,#9,#16,#17,#35]  epsilon: 0.01310699839698 kilocalorie / mole  id: n8  rmin_half: 1.377051329051 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3](~[#7,#8,#9,#16,#17,#35])~[#7,#8,#9,#16,#17,#35]  epsilon: 0.01479744504464 kilocalorie / mole  id: n9  rmin_half: 1.370482808197 angstrom  >, <vdWType with smirks: [#1:1]-[#6X2]  epsilon: 0.015 kilocalorie / mole  id: n10  rmin_half: 1.459 angstrom  >, <vdWType with smirks: [#1:1]-[#7]  epsilon: 0.01409081474669 kilocalorie / mole  id: n11  rmin_half: 0.6192778454102 angstrom  >, <vdWType with smirks: [#1:1]-[#8]  epsilon: 1.232599966667e-05 kilocalorie / mole  id: n12  rmin_half: 0.2999999999997 angstrom  >, <vdWType with smirks: [#1:1]-[#16]  epsilon: 0.0157 kilocalorie / mole  id: n13  rmin_half: 0.6 angstrom  >, <vdWType with smirks: [#6:1]  epsilon: 0.0868793154488 kilocalorie / mole  id: n14  rmin_half: 1.953447017081 angstrom  >, <vdWType with smirks: [#6X2:1]  epsilon: 0.21 kilocalorie / mole  id: n15  rmin_half: 1.908 angstrom  >, <vdWType with smirks: [#6X4:1]  epsilon: 0.1088406109251 kilocalorie / mole  id: n16  rmin_half: 1.896698071741 angstrom  >, <vdWType with smirks: [#8:1]  epsilon: 0.2102061007896 kilocalorie / mole  id: n17  rmin_half: 1.706036917087 angstrom  >, <vdWType with smirks: [#8X2H0+0:1]  epsilon: 0.1684651402602 kilocalorie / mole  id: n18  rmin_half: 1.697783613804 angstrom  >, <vdWType with smirks: [#8X2H1+0:1]  epsilon: 0.2094735324129 kilocalorie / mole  id: n19  rmin_half: 1.682099169199 angstrom  >, <vdWType with smirks: [#7:1]  epsilon: 0.1676915150424 kilocalorie / mole  id: n20  rmin_half: 1.799798315098 angstrom  >, <vdWType with smirks: [#16:1]  epsilon: 0.25 kilocalorie / mole  id: n21  rmin_half: 2.0 angstrom  >, <vdWType with smirks: [#15:1]  epsilon: 0.2 kilocalorie / mole  id: n22  rmin_half: 2.1 angstrom  >, <vdWType with smirks: [#9:1]  epsilon: 0.061 kilocalorie / mole  id: n23  rmin_half: 1.75 angstrom  >, <vdWType with smirks: [#17:1]  epsilon: 0.2656001046527 kilocalorie / mole  id: n24  rmin_half: 1.85628721824 angstrom  >, <vdWType with smirks: [#35:1]  epsilon: 0.3218986365974 kilocalorie / mole  id: n25  rmin_half: 1.969806594135 angstrom  >, <vdWType with smirks: [#53:1]  epsilon: 0.4 kilocalorie / mole  id: n26  rmin_half: 2.35 angstrom  >, <vdWType with smirks: [#3+1:1]  epsilon: 0.0279896 kilocalorie / mole  id: n27  rmin_half: 1.025 angstrom  >, <vdWType with smirks: [#11+1:1]  epsilon: 0.0874393 kilocalorie / mole  id: n28  rmin_half: 1.369 angstrom  >, <vdWType with smirks: [#19+1:1]  epsilon: 0.1936829 kilocalorie / mole  id: n29  rmin_half: 1.705 angstrom  >, <vdWType with smirks: [#37+1:1]  epsilon: 0.3278219 kilocalorie / mole  id: n30  rmin_half: 1.813 angstrom  >, <vdWType with smirks: [#55+1:1]  epsilon: 0.4065394 kilocalorie / mole  id: n31  rmin_half: 1.976 angstrom  >, <vdWType with smirks: [#9X0-1:1]  epsilon: 0.003364 kilocalorie / mole  id: n32  rmin_half: 2.303 angstrom  >, <vdWType with smirks: [#17X0-1:1]  epsilon: 0.035591 kilocalorie / mole  id: n33  rmin_half: 2.513 angstrom  >, <vdWType with smirks: [#35X0-1:1]  epsilon: 0.0586554 kilocalorie / mole  id: n34  rmin_half: 2.608 angstrom  >, <vdWType with smirks: [#53X0-1:1]  epsilon: 0.0536816 kilocalorie / mole  id: n35  rmin_half: 2.86 angstrom  >, <vdWType with smirks: [#1]-[#8X2H2+0:1]-[#1]  epsilon: 0.1521 kilocalorie / mole  id: n-tip3p-O  sigma: 3.1507 angstrom  >, <vdWType with smirks: [#1:1]-[#8X2H2+0]-[#1]  epsilon: 0.0 kilocalorie / mole  id: n-tip3p-H  sigma: 1 angstrom  >, <vdWType with smirks: [#54:1]  epsilon: 0.561 kilocalorie / mole  id: n36  sigma: 4.363 angstrom  >]
+    vdw_handler parameters: [<vdWType with smirks: [#1:1]  epsilon: 0.0157 kilocalorie / mole  id: n1  rmin_half: 0.6 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]  epsilon: 0.01336628116185 kilocalorie / mole  id: n2  rmin_half: 1.495082464255 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]-[#7,#8,#9,#16,#17,#35]  epsilon: 0.01891997418601 kilocalorie / mole  id: n3  rmin_half: 1.435967812686 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4](-[#7,#8,#9,#16,#17,#35])-[#7,#8,#9,#16,#17,#35]  epsilon: 0.01559137568183 kilocalorie / mole  id: n4  rmin_half: 1.288149753875 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4](-[#7,#8,#9,#16,#17,#35])(-[#7,#8,#9,#16,#17,#35])-[#7,#8,#9,#16,#17,#35]  epsilon: 0.01517383637638 kilocalorie / mole  id: n5  rmin_half: 1.188911001242 angstrom  >, <vdWType with smirks: [#1:1]-[#6X4]~[*+1,*+2]  epsilon: 0.0157 kilocalorie / mole  id: n6  rmin_half: 1.1 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3]  epsilon: 0.01597537378736 kilocalorie / mole  id: n7  rmin_half: 1.479065946749 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3]~[#7,#8,#9,#16,#17,#35]  epsilon: 0.01761379732429 kilocalorie / mole  id: n8  rmin_half: 1.370805406499 angstrom  >, <vdWType with smirks: [#1:1]-[#6X3](~[#7,#8,#9,#16,#17,#35])~[#7,#8,#9,#16,#17,#35]  epsilon: 0.01359601107204 kilocalorie / mole  id: n9  rmin_half: 1.372163754664 angstrom  >, <vdWType with smirks: [#1:1]-[#6X2]  epsilon: 0.015 kilocalorie / mole  id: n10  rmin_half: 1.459 angstrom  >, <vdWType with smirks: [#1:1]-[#7]  epsilon: 0.01386809433135 kilocalorie / mole  id: n11  rmin_half: 0.6506218845032 angstrom  >, <vdWType with smirks: [#1:1]-[#8]  epsilon: 1.232058709465e-05 kilocalorie / mole  id: n12  rmin_half: 0.2991902460601 angstrom  >, <vdWType with smirks: [#1:1]-[#16]  epsilon: 0.0157 kilocalorie / mole  id: n13  rmin_half: 0.6 angstrom  >, <vdWType with smirks: [#6:1]  epsilon: 0.1033185743622 kilocalorie / mole  id: n14  rmin_half: 1.95815324792 angstrom  >, <vdWType with smirks: [#6X2:1]  epsilon: 0.2681357838595 kilocalorie / mole  id: n15  rmin_half: 1.906103098598 angstrom  >, <vdWType with smirks: [#6X4:1]  epsilon: 0.1205698919337 kilocalorie / mole  id: n16  rmin_half: 1.901434475347 angstrom  >, <vdWType with smirks: [#8:1]  epsilon: 0.2245605099459 kilocalorie / mole  id: n17  rmin_half: 1.701930728788 angstrom  >, <vdWType with smirks: [#8X2H0+0:1]  epsilon: 0.08532552033817 kilocalorie / mole  id: n18  rmin_half: 1.702425033604 angstrom  >, <vdWType with smirks: [#8X2H1+0:1]  epsilon: 0.1353608645661 kilocalorie / mole  id: n19  rmin_half: 1.697006198763 angstrom  >, <vdWType with smirks: [#7:1]  epsilon: 0.1025954704049 kilocalorie / mole  id: n20  rmin_half: 1.845362249921 angstrom  >, <vdWType with smirks: [#16:1]  epsilon: 0.25 kilocalorie / mole  id: n21  rmin_half: 2.0 angstrom  >, <vdWType with smirks: [#15:1]  epsilon: 0.2 kilocalorie / mole  id: n22  rmin_half: 2.1 angstrom  >, <vdWType with smirks: [#9:1]  epsilon: 0.061 kilocalorie / mole  id: n23  rmin_half: 1.75 angstrom  >, <vdWType with smirks: [#17:1]  epsilon: 0.2378672481785 kilocalorie / mole  id: n24  rmin_half: 1.847209758547 angstrom  >, <vdWType with smirks: [#35:1]  epsilon: 0.3359052482848 kilocalorie / mole  id: n25  rmin_half: 1.964485358405 angstrom  >, <vdWType with smirks: [#53:1]  epsilon: 0.4 kilocalorie / mole  id: n26  rmin_half: 2.35 angstrom  >, <vdWType with smirks: [#3+1:1]  epsilon: 0.0279896 kilocalorie / mole  id: n27  rmin_half: 1.025 angstrom  >, <vdWType with smirks: [#11+1:1]  epsilon: 0.0874393 kilocalorie / mole  id: n28  rmin_half: 1.369 angstrom  >, <vdWType with smirks: [#19+1:1]  epsilon: 0.1936829 kilocalorie / mole  id: n29  rmin_half: 1.705 angstrom  >, <vdWType with smirks: [#37+1:1]  epsilon: 0.3278219 kilocalorie / mole  id: n30  rmin_half: 1.813 angstrom  >, <vdWType with smirks: [#55+1:1]  epsilon: 0.4065394 kilocalorie / mole  id: n31  rmin_half: 1.976 angstrom  >, <vdWType with smirks: [#9X0-1:1]  epsilon: 0.003364 kilocalorie / mole  id: n32  rmin_half: 2.303 angstrom  >, <vdWType with smirks: [#17X0-1:1]  epsilon: 0.035591 kilocalorie / mole  id: n33  rmin_half: 2.513 angstrom  >, <vdWType with smirks: [#35X0-1:1]  epsilon: 0.0586554 kilocalorie / mole  id: n34  rmin_half: 2.608 angstrom  >, <vdWType with smirks: [#53X0-1:1]  epsilon: 0.0536816 kilocalorie / mole  id: n35  rmin_half: 2.86 angstrom  >, <vdWType with smirks: [#1]-[#8X2H2+0:1]-[#1]  epsilon: 0.1521 kilocalorie / mole  id: n-tip3p-O  sigma: 3.1507 angstrom  >, <vdWType with smirks: [#1:1]-[#8X2H2+0]-[#1]  epsilon: 0.0 kilocalorie / mole  id: n-tip3p-H  sigma: 1 angstrom  >, <vdWType with smirks: [#54:1]  epsilon: 0.561 kilocalorie / mole  id: n36  sigma: 4.363 angstrom  >]
 
 
 From here you can inspect all the way down to individual parameters, which are stored in custom objects (in this case, `vdWType`). Let's look at the type with id `n16`, which looks like a generic carbon with four bonded neighbors:
@@ -102,7 +178,7 @@ vdw_type
 
 
 
-    <vdWType with smirks: [#6X4:1]  epsilon: 0.1088406109251 kilocalorie / mole  id: n16  rmin_half: 1.896698071741 angstrom  >
+    <vdWType with smirks: [#6X4:1]  epsilon: 0.1205698919337 kilocalorie / mole  id: n16  rmin_half: 1.901434475347 angstrom  >
 
 
 
@@ -110,7 +186,7 @@ Note that the type contains both the physical parameters (sigma and epsilon, for
 
 The toolkit uses these SMIRKS patterns and direct chemical perception to assign parameters to particular atoms (or bonds, angles, etc.).
 
-We'll use OpenFF 2.2.1 for the remainder of this tutorial, but you can learn more about this and other SMIRNOFF force fields below:
+We'll use OpenFF 2.3.0 for the remainder of this tutorial. This is OpenFF's latest small molecule force field and is a leading open-source small molecule force field which [performs comparably to other open-source force fields](https://doi.org/10.1021/acs.jctc.3c00039). You can learn more about this and other SMIRNOFF force fields below:
 <details>
   <summary><b>Click here to learn about available and planned SMIRNOFF force fields</b></summary>
 
@@ -132,7 +208,7 @@ The Parsley line of force fields (`openff-1.y.z.offxml`) was OpenFF's [first ful
 
 The Sage line of force fields (`openff-2.y.z.offxml`) continued the process of fitting to more (and more diverse) QM datasets, but also included a re-fit of the Lennard-Jones parameters. Small molecule geometries and energies [improved, in general,](https://openforcefield.org/community/news/general/sage2.0.0-release/) significantly over Parsley. These improvements notably transferred to protein-ligand binding free energies despite Sage not being specifically fit to them. For more, see the [associated paper](https://pubs.acs.org/doi/10.1021/acs.jctc.3c00039).
 
-[Subsequent releases](https://github.com/openforcefield/openff-forcefields/releases) used different fitting procedures and tweaks to parameter typing to improve performance and address issues with several specific chemistries. The latest release, **Sage 2.2.1 (`openff-2.2.1.offxml`) is the recommended force field for small molecule studies.**
+[Subsequent releases](https://github.com/openforcefield/openff-forcefields/releases) used different fitting procedures and tweaks to parameter typing to improve performance and address issues with several specific chemistries. Notably, Sage 2.3.0 includes fast graph neural network charge assignment with AshGC, which is discussed later in this notebook. This charge model is trained to reproduce AM1-BCC charges, but scales 𝒪(N) rather than the 𝒪(N<sup>2</sup>) of common AM1-BCC implementations, making it suitable for large (>> 100 atoms) molecules. The latest release, **Sage 2.3.0 (`openff-2.3.0.offxml`) is the recommended force field for small molecule studies.**
 
 ## Ports
 
@@ -150,7 +226,14 @@ Existing main-line OpenFF force fields are fit against TIP3P water, so use of ot
 
 ## ff14SB
 
-OpenFF, in collaboration with Dave Cerutti of the Amber community, created a port of [ff14SB](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00255), a popular Amber protein force field. There are some small numerical differences with how improper torsions are evaluated, but all other terms reproduce a canonical Amber source to high accuracy. **This is the only protein force field currently in SMIRONOFF (`.offxml`) format** and therefore the current recommendation for use with proteins. Primarily for technical reasons, porting other Amber force fields is not planned.
+OpenFF, in collaboration with Dave Cerutti of the Amber community, created a port of [ff14SB](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00255), a popular Amber protein force field. There are some small numerical differences with how improper torsions are evaluated, but all other terms reproduce a canonical Amber source to high accuracy. **This is the only protein force field currently in SMIRNOFF (`.offxml`) format** and therefore the current recommendation for use with proteins. Primarily for technical reasons, porting other Amber force fields is not planned.
+
+## Rosemary Alpha
+
+A future line of force fields from OpenFF (code name "Rosemary", starting with `openff-3.0.0.offxml`) is intended to handle small molecules and biopolymers in a _self-consistent_ manner. This is exciting as it will streamline simulations of proteins with non-canonical amino acids! See the workshop [Simulating Post-Translationally Modified Proteins with the OpenFF Rosemary Alpha](https://github.com/openforcefield/2026-virtual-workshops/blob/main/ptm/ptm-workshop.ipynb). The first release will handle proteins, but future versions may cover nucleic acids. The performance, depending on the metrics used, is hoped to be comparable with existing Amber-family protein force fields. 
+
+A pre-release version of Rosemary is available for testing as [`openff_no_water-3.0.0-alpha0.offxml`](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff_no_water-3.0.0-alpha0.offxml). If you use it, see [the release notes](https://github.com/openforcefield/openff-forcefields/releases/tag/2025.10.1). 
+
 
 ## Non-main-line force fields
 
@@ -165,19 +248,11 @@ https://github.com/jthorton/de-forcefields
 ## From OpenFF
 
 ### Rosemary
-A future line of force fields from OpenFF (code name "Rosemary", starting with `openff-3.0.0.offxml`) is intended to handle small molecules and biopolymers in a _self-consistent_ manner. The first release is expected to handle proteins, but future versions  may cover nucleic acids. The performance, depending on the metrics used, is hoped to be comparable with existing Amber-family protein force fields.
-
-There is no specific release date planned for Rosemary, but it may be available in 2026 (a beta release candidate may also be publically available prior to the full release).
-
-### Graph net charge assignment
-
-TODO: UPDAATE AND MENTION 2.3
-
-The Sage 2.3.0 release is expected imminently and will include graph-convolutional neutral network (GCNN)-based charge assignment using [NAGL](https://github.com/openforcefield/openff-nagl) by default. The charge model is trained to reproduce AM1-BCC charges without the typical $O(N^3)$ scaling, making it suitable for large (>> 100 atoms) molecules). The [second release candidate](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.3.0-rc2.offxml) (which may or may not become the final version) is already available for you to try!
+There is no specific release date planned for the first full version of Rosemary, but it may be available in late 2026.
 
 ### Virtual sites
 
-Another release from OpenFF may include some virtual site parameters with off-center charges. No release date is planned, but the most of the supporting infrastructure is currently in place and some early studies have shown promise for better representing electrostatics of chemistries such as halogens and aromatic nitrogens.
+Another release from OpenFF may include some virtual site parameters with off-center charges. No release date is planned, but most of the supporting infrastructure is currently in place and some early studies have shown promise for better representing electrostatics of chemistries such as halogens and aromatic nitrogens.
 
 ## From you!
 
@@ -187,7 +262,7 @@ Anybody can write a SMIRNOFF force field! This workshop doesn't have time to cov
 <a id="topology"></a>
 ## 2. The `Topology` class represents a chemical system containing one or more `Molecule`s
 
-Now we've loaded our desired force field (OpenFF 2.2.1), we need to specify the chemical system we want to assign force field parameters to ("parameterise"). Our system will be represented by a `Topology`, which we will build from one or more `Molecule`s. 
+Now we've loaded our desired force field (OpenFF 2.3.0), we need to specify the chemical system we want to assign force field parameters to ("parameterise"). Our system will be represented by a `Topology`, which we will build from one or more `Molecule`s. 
 
 As a simple example, let's build a `Topology` containing an small molecule with some features which illustrate how parameters are applied according to SMIRKS matches. We'll use the crotonate anion, but you could draw any molecule you like and convert it to a SMILES string using tools like ChemDraw and [MolView](https://molview.org/).
 
@@ -201,15 +276,7 @@ molecule
 
 
     
-
-
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/nglview/__init__.py:12: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
-      import pkg_resources
-
-
-
-    
-![svg](output_12_2.svg)
+![svg](output_17_0.svg)
     
 
 
@@ -282,7 +349,7 @@ topology_with_water.molecule(0), topology_with_water.molecule(1), topology_with_
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
-    ✏️ <b>Exercise:</b> Build a <code>Topology</code> containing an MCL-1 ligand. Create the <code>Molecule</code> from an SDF file  (take a look at the docstring of <code>Molecule</code> to see how this can be done). Also, see <a href="https://docs.openforcefield.org/projects/toolkit/en/stable/users/molecule_cookbook.html">Molecule cookbook</a> for all the ways to make a <code>Molecule</code>. The crystallographic MCL-1 ligand from PDB ID 6o6f is provided at <code>../structures/606f_ligand.sdf</code>. Note that you don't need to use <code>get_data_file_path</code> as we already know the path.
+    ✏️ <b>Exercise:</b> Build a <code>Topology</code> containing an MCL-1 ligand. Create the <code>Molecule</code> from an SDF file  (take a look at the docstring of <code>Molecule</code> to see how this can be done, noting that you can just pass the sdf path given below and don't need the <code>get_data_file_path</code> function). Also, see <a href="https://docs.openforcefield.org/projects/toolkit/en/stable/users/molecule_cookbook.html">Molecule cookbook</a> for all the ways to make a <code>Molecule</code>. The crystallographic MCL-1 ligand from PDB ID 6o6f is provided at <code>../structures/6o6f_ligand.sdf</code>. Note that you don't need to use <code>get_data_file_path</code> as we already know the path.
 </div>
 
 
@@ -293,7 +360,7 @@ mcl1_mol = Molecule("../structures/6o6f_ligand.sdf")
 top = mcl1_mol.to_topology()
 ```
 
-We will cover creating a topology for a protein-ligand complex this afternoon.
+We will cover creating a topology for a protein-ligand complex in the next notebook.
 
 <a id="interchange"></a>
 ## 3. `Interchange` objects contain fully parameterised systems with all the information needed to start a simulation
@@ -302,15 +369,12 @@ Now we've specified our force field and our chemical system using classes from t
 
 To do this, we'll use the `Interchange` class from the OpenFF Interchange package, which stores a fully-parameterised molecular system and provides methods to write out simulation-ready input files for a number of software packages. They key objective of Interchange is to provide an intermediate inspectable state after parameterisation and before conversion to an engine-specific format. For most users, an `Interchange` forms the bridge between the OpenFF ecosystem and their simulation software of choice. The current focus is applying SMIRNOFF force fields to chemical topologies and exporting the result to engines preferred by our users. In order of stability, OpenMM, GROMACS, Amber, and LAMMPS are supported. Future development may include support for CHARMM and other engines.
 
-Below is a summary of how data flows through a workflow utilising OpenFF tools, including where Interchange sits in the flow.
-
-<img src="../images/openff_flowchart.png" alt="Description of image" style="max-width: 1000px; display: block; margin-left: auto; margin-right: auto;" />
-
 First, let's recreate our `molecule` and `topology` in case you overwrote them during the previous exercises:
 
 
 ```python
 molecule = Molecule.from_smiles("C/C=C/C(=O)[O-]")
+molecule.generate_conformers(n_conformers=1)
 topology = molecule.to_topology()
 ```
 
@@ -440,7 +504,7 @@ SVG(mol_with_atom_index(molecule))
 
 
     
-![svg](output_40_0.svg)
+![svg](output_44_0.svg)
     
 
 
@@ -469,7 +533,7 @@ collection.key_map
 
 
 
-We can see that the C=C bond (indices (1,2)) is associated with a potential key with the SMIRKS pattern `[#6X3:1]=[#6X3:2]` (specifying any two carbons bonded to 3 atoms connected by a double bond). Note that the (1,0) C-C bond is matched by the SMRIKS `[#6X3:1]-[#6X3:2]`, which specifies the atoms in the same way, showing that the parameters have been assigned by directly using information about the bond. This contrasts to traditional atom typing approaches, where information about the bond would be implicitly encoded in the atom types used to assign the parameters. Another example of this "direct chemical perception" is the assignment of the carboxylate carbon-oxygen bond parameters, which only match (triply-connected carbon) - (singly-connnected oxygen) bonds when the carbon is bonded to another singly-connected oxygen.
+We can see that the C=C bond (indices (1,2)) is associated with a potential key with the SMIRKS pattern `[#6X3:1]=[#6X3:2]` (specifying any two carbons each bonded to 3 atoms and connected by a double bond). Note that the (1,0) C-C bond is matched by the SMRIKS `[#6X3:1]-[#6X3:2]`, which specifies the atoms in the same way, showing that the parameters have been assigned by directly using information about the bond. This contrasts to traditional atom typing approaches, where information about the bond would be implicitly encoded in the atom types used to assign the parameters. Another example of this "direct chemical perception" is the assignment of the carboxylate carbon-oxygen bond parameters, which only match (triply-connected carbon) - (singly-connnected oxygen) bonds when the carbon is bonded to another singly-connected oxygen.
 
 To see the actual parmeters specified for this bond, we can look up the `Potential` objects using the `PotentialKey`s.
 
@@ -480,16 +544,16 @@ for topology_key, potential_key in collection.key_map.items():
     print(f"{topology_key} -> {potential}")
 ```
 
-    atom_indices=(0, 1) bond_order=None -> parameters={'k': <Quantity(478.593862, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.50990609, 'angstrom')>} map_key=None
-    atom_indices=(0, 6) bond_order=None -> parameters={'k': <Quantity(715.716502, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09397889, 'angstrom')>} map_key=None
-    atom_indices=(0, 7) bond_order=None -> parameters={'k': <Quantity(715.716502, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09397889, 'angstrom')>} map_key=None
-    atom_indices=(0, 8) bond_order=None -> parameters={'k': <Quantity(715.716502, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09397889, 'angstrom')>} map_key=None
-    atom_indices=(1, 2) bond_order=None -> parameters={'k': <Quantity(904.136474, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.37332262, 'angstrom')>} map_key=None
-    atom_indices=(1, 9) bond_order=None -> parameters={'k': <Quantity(772.640205, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.0859499, 'angstrom')>} map_key=None
-    atom_indices=(2, 3) bond_order=None -> parameters={'k': <Quantity(534.900401, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.46781367, 'angstrom')>} map_key=None
-    atom_indices=(2, 10) bond_order=None -> parameters={'k': <Quantity(772.640205, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.0859499, 'angstrom')>} map_key=None
-    atom_indices=(3, 4) bond_order=None -> parameters={'k': <Quantity(1181.50884, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.26002549, 'angstrom')>} map_key=None
-    atom_indices=(3, 5) bond_order=None -> parameters={'k': <Quantity(1181.50884, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.26002549, 'angstrom')>} map_key=None
+    atom_indices=(0, 1) bond_order=None -> parameters={'k': <Quantity(590.299542, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.50405326, 'angstrom')>} map_key=None
+    atom_indices=(0, 6) bond_order=None -> parameters={'k': <Quantity(680.766445, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09244581, 'angstrom')>} map_key=None
+    atom_indices=(0, 7) bond_order=None -> parameters={'k': <Quantity(680.766445, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09244581, 'angstrom')>} map_key=None
+    atom_indices=(0, 8) bond_order=None -> parameters={'k': <Quantity(680.766445, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.09244581, 'angstrom')>} map_key=None
+    atom_indices=(1, 2) bond_order=None -> parameters={'k': <Quantity(911.750546, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.36599361, 'angstrom')>} map_key=None
+    atom_indices=(1, 9) bond_order=None -> parameters={'k': <Quantity(799.445393, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.08663579, 'angstrom')>} map_key=None
+    atom_indices=(2, 3) bond_order=None -> parameters={'k': <Quantity(535.332596, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.46005396, 'angstrom')>} map_key=None
+    atom_indices=(2, 10) bond_order=None -> parameters={'k': <Quantity(799.445393, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.08663579, 'angstrom')>} map_key=None
+    atom_indices=(3, 4) bond_order=None -> parameters={'k': <Quantity(1141.6952, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.25831056, 'angstrom')>} map_key=None
+    atom_indices=(3, 5) bond_order=None -> parameters={'k': <Quantity(1141.6952, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.25831056, 'angstrom')>} map_key=None
 
 
 So our C=C bond (indices (1,2)) has a force constant of 904 kcal mol<sup>-1</sup> Å<sup>-2</sup> and an equilibrium bond length of 1.37 Å. Note that the [`ForceField.label_molecules`](https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.typing.engines.smirnoff.ForceField.html#openff.toolkit.typing.engines.smirnoff.ForceField.label_molecules) method is also useful for checking which parameters will be applied to your molecule.
@@ -531,31 +595,31 @@ collection.key_map
 bond1_indices, bond2_indices = (3,4), (3,5)
 smiles = {"anion": "C/C=C/C(=O)[O-]", "neutral": "C/C=C/C(=O)O"}
 
+# Use fresh variable names so we don't overwrite `molecule`, `topology` and `interchange`
 for name, smiles in smiles.items():
     print(f"\n{name} ({smiles}):")
-    molecule = Molecule.from_smiles(smiles)
-    topology = molecule.to_topology()
-    interchange = Interchange.from_smirnoff(
+    protonation_state = Molecule.from_smiles(smiles)
+    protonation_state_interchange = Interchange.from_smirnoff(
         force_field=sage,
-        topology=topology,
+        topology=protonation_state.to_topology(),
     )
-    collection = interchange.collections["Bonds"]
-    bond1 = collection[bond1_indices]
-    bond2 = collection[bond2_indices]
+    bonds = protonation_state_interchange.collections["Bonds"]
+    bond1 = bonds[bond1_indices]
+    bond2 = bonds[bond2_indices]
     print(f"  Bond {bond1_indices}: {bond1}")
     print(f"  Bond {bond2_indices}: {bond2}")
 ```
 
     
     anion (C/C=C/C(=O)[O-]):
-      Bond (3, 4): parameters={'k': <Quantity(1181.50884, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.26002549, 'angstrom')>} map_key=None
-      Bond (3, 5): parameters={'k': <Quantity(1181.50884, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.26002549, 'angstrom')>} map_key=None
+      Bond (3, 4): parameters={'k': <Quantity(1141.6952, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.25831056, 'angstrom')>} map_key=None
+      Bond (3, 5): parameters={'k': <Quantity(1141.6952, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.25831056, 'angstrom')>} map_key=None
     
     neutral (C/C=C/C(=O)O):
 
 
-      Bond (3, 4): parameters={'k': <Quantity(1523.99024, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.22481931, 'angstrom')>} map_key=None
-      Bond (3, 5): parameters={'k': <Quantity(693.059897, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.36024439, 'angstrom')>} map_key=None
+      Bond (3, 4): parameters={'k': <Quantity(1635.44354, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.23024478, 'angstrom')>} map_key=None
+      Bond (3, 5): parameters={'k': <Quantity(676.222227, 'kilocalorie_per_mole / angstrom ** 2')>, 'length': <Quantity(1.35758125, 'angstrom')>} map_key=None
 
 
 Finally, `interchange.box` and `interchange.velocities` are `None`, although `interchange.positions` is populated because we passed a topology with a molecule that had a defined conformer, so `from_smirnoff` set atomic positions from this information:
@@ -568,7 +632,19 @@ interchange.positions, interchange.box, interchange.velocities
 
 
 
-    (None, None, None)
+    (<Quantity([[-0.16884651 -0.03204099  0.02797506]
+      [-0.02695262 -0.04551754 -0.01496804]
+      [ 0.05777792  0.05074697  0.01721889]
+      [ 0.19690544  0.03719656 -0.02507113]
+      [ 0.23595445 -0.06303954 -0.09039396]
+      [ 0.29175033  0.13419756  0.00498716]
+      [-0.1829386   0.05336654  0.09439656]
+      [-0.23077479 -0.01166554 -0.06346681]
+      [-0.20531354 -0.1285518   0.07293682]
+      [ 0.00522258 -0.13138426 -0.0706145 ]
+      [ 0.02721534  0.13669204  0.07249894]], 'nanometer')>,
+     None,
+     None)
 
 
 
@@ -594,7 +670,7 @@ for atom in water.atoms:
 # the volume.
 topology = pack_box(
     molecules=[solute, water],
-    number_of_copies=[1, 1000],
+    number_of_copies=[1, 1400],
     box_vectors=3.5 * UNIT_CUBE * unit.nanometer,
 )
 
@@ -606,11 +682,11 @@ interchange.topology.n_atoms, interchange.box, interchange.positions.shape
 
 
 
-    (3012,
+    (4212,
      <Quantity([[3.5 0.  0. ]
       [0.  3.5 0. ]
       [0.  0.  3.5]], 'nanometer')>,
-     (3012, 3))
+     (4212, 3))
 
 
 
@@ -621,9 +697,9 @@ At this point, we could easily export input files for our simulation engine of c
 interchange.to_amber(prefix="ligand")
 ```
 
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/openff/interchange/components/mdconfig.py:502: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:504: UserWarning: Ambiguous failure while processing constraints. Constraining h-bonds as a stopgap.
       warnings.warn(
-    /opt/conda/envs/openff-env/lib/python3.12/site-packages/openff/interchange/components/mdconfig.py:430: SwitchingFunctionNotImplementedWarning: A switching distance 8.0 angstrom was specified by the force field, but Amber does not implement a switching function. Using a hard cut-off instead. Non-bonded interactions will be affected.
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/openff/interchange/components/mdconfig.py:434: SwitchingFunctionNotImplementedWarning: A switching distance 8.0 angstrom was specified by the force field, but Amber does not implement a switching function. Using a hard cut-off instead. Non-bonded interactions will be affected.
       warnings.warn(
 
 
@@ -638,17 +714,18 @@ interchange.to_amber(prefix="ligand")
     complex_pointenergy.mdp  topology.json
     ligand.inpcrd		 trajectory.dcd
     ligand.prmtop		 trajectory_gpu.dcd
-    ligand_pointenergy.in
+    ligand_pointenergy.in	 trajectory_showcase.dcd
 
 
-Here, we'll export to OpenMM and run a short simulation directly from the noteboook. We can create an OpenMM `Simulation` object from the `Interchange` and run for a specified wall clock time using `runForClockTime` (the simluation time will depend on how quickly it runs on your machine). We keep the volume ($V$), number of particles ($N$), and average temperature ($T$) (using the LangevinMiddleIntegrator) constant and the simulation corresponds to the $NVT$ ensemble.
+Here, we'll export to OpenMM and run a short simulation directly from the noteboook. We can create an OpenMM `Simulation` object from the `Interchange` and run for a specified wall clock time using `runForClockTime` (the simluation time will depend on how quickly it runs on your machine). We keep the volume ($V$), number of particles ($N$), and average temperature ($T$) (using the LangevinIntegrator) constant and the simulation corresponds to the $NVT$ ensemble.
 
 
 ```python
 import openmm
+import openmm.app
 import openmm.unit
 from openff.interchange import Interchange
-import mdtraj
+import MDAnalysis as mda
 import nglview
 
 
@@ -658,7 +735,7 @@ def run_openmm(
     trajectory_name: str = "small_mol_solvated.dcd",
 ):
     simulation = interchange.to_openmm_simulation(
-        integrator=openmm.LangevinMiddleIntegrator(
+        integrator=openmm.LangevinIntegrator(
             300 * openmm.unit.kelvin,
             1 / openmm.unit.picosecond,
             0.002 * openmm.unit.picoseconds,
@@ -676,12 +753,10 @@ def visualise_traj(
     topology: Topology, filename: str = "small_mol_solvated.dcd"
 ) -> nglview.NGLWidget:
     """Visualise a trajectory using nglview."""
-    traj = mdtraj.load(
-        filename,
-        top=mdtraj.Topology.from_openmm(topology.to_openmm()),
-    )
 
-    view = nglview.show_mdtraj(traj)
+    u = mda.Universe(topology.to_openmm(), filename)
+
+    view = nglview.show_mdanalysis(u)
     view.add_representation("licorice", selection="water")
 
     return view
@@ -691,8 +766,12 @@ run_openmm(interchange)
 visualise_traj(interchange.topology)
 ```
 
+    /opt/conda/envs/openff-env/lib/python3.14/site-packages/MDAnalysis/coordinates/DCD.py:171: DeprecationWarning: DCDReader currently makes independent timesteps by copying self.ts while other readers update self.ts inplace. This behavior will be changed in 3.0 to be the same as other readers. Read more at https://github.com/MDAnalysis/mdanalysis/issues/3889 to learn if this change in behavior might affect you.
+      warnings.warn("DCDReader currently makes independent timesteps"
 
-    NGLWidget(max_frame=49)
+
+
+    NGLWidget(max_frame=25)
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
@@ -702,116 +781,79 @@ visualise_traj(interchange.topology)
 <a id="gnn_charges"></a>
 ## 4. Graph Neural Networks Allow Fast Assignment of Partial Charges
 
-You might notice that [Sage](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.2.1.offxml) doesn't contain tabulated charges for most atomic environments in the way it does for all other terms in the force field. Instead, it specifies:
+You might notice that Sage force fields don't contain tabulated charges for most atomic environments in the way they do for all other terms in the force field. For example, [Sage 2.2.1](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.2.1.offxml) instead specifies:
 ```
 <ToolkitAM1BCC version="0.3"></ToolkitAM1BCC>
 ```
-which means that partial charges will be calculated using the common AM1-BCC method. Charges from a semi-empirical quantum chemistry calculation (Austin Model 1) are corrected (bond charge correction) to approximate charges obtained by fitting to the electrostatic potential at the HF/6-31G* level (see [Jakalian et al.](https://onlinelibrary.wiley.com/doi/10.1002/(SICI)1096-987X(20000130)21:2%3C132::AID-JCC5%3E3.0.CO;2-P)). Unfortunately, AM1-BCC scales 𝒪(N<sup>2</sup>) in the number of atoms N, making it prohibitively slow for large molecules and biopolymers.
+which means that partial charges will be calculated using the common AM1-BCC method. Charges from a semi-empirical quantum chemistry calculation (Austin Model 1) are corrected (bond charge correction) to approximate charges obtained by fitting to the electrostatic potential at the HF/6-31G* level (see [Jakalian et al.](https://onlinelibrary.wiley.com/doi/10.1002/(SICI)1096-987X(20000130)21:2%3C132::AID-JCC5%3E3.0.CO;2-P)). Unfortunately, parameterisation with AM1-BCC using OpenEye or AmberTools scales 𝒪(N<sup>2</sup>) in the number of atoms N, making it prohibitively slow for large molecules and biopolymers.
 
-Methods which assign partial charges using graph neural networks offer rapid assignment with better scaling. They also offer the possibility of going beyond traditionally affordable QM levels of theory by training to quickly reproduce charges from expensive calculations. For example, [EspalomaCharge](https://pubs.acs.org/doi/full/10.1021/acs.jpca.4c01287) is fit to AM1-BCC charges and offers 𝒪(N<sup>2</sup>) scaling, while [Adams et al.](https://chemrxiv.org/engage/chemrxiv/article-details/6839c94c3ba0887c33d2cd8e) trained models to reproduce atoms-in-molecules charges and electrostatic potentials obtained at a high level of theory. Here, we'll use OpenFF's [AshGC](https://zenodo.org/records/15770227/files/AshGC_methods_2025-06-30.pdf?download=1) model, which is trained to reproduce AM1-BCC charges.
+Methods which assign partial charges using graph neural networks offer rapid assignment with better scaling. They also offer the possibility of going beyond traditionally affordable QM levels of theory by training to quickly reproduce charges from expensive calculations. For example, OpenFF's [AshGC](https://doi.org/10.1021/acs.jctc.6c00169) model is fit to AM1-BCC charges and offers 𝒪(N) scaling, while [Adams et al.](https://doi.org/10.1021/acs.jctc.5c01520) trained models to reproduce atoms-in-molecules charges and electrostatic potentials obtained at a high level of theory. AshGC is used by [Sage 2.3.0](https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.3.0.offxml) -- if you inspect the file, you'll see:
+```
+<NAGLCharges model_file="openff-gnn-am1bcc-1.0.0.pt" model_file_hash="7981e7f5b0b1e424c9e10a40d9e7606d96dcd3dd2b095cb4eeff6829f92238ee" version="0.3"></NAGLCharges>
+```
+where "openff-gnn-am1bcc-1.0.0.pt" is the AshGC model.
 
-<div class="alert alert-warning" style="max-width: 700px; margin-left: auto; margin-right: auto;">
-    ⚠️ OpenFF 2.2.1 has not been explicitly trained and validated with AshGC charges. However, the 2.3.0 release will be, and is expected imminently. AshGC charges will be used as default and will be specified in the <code>.offxml</code> file, so there will be no need to call <code>Molecule.assign_partial_charges</code> as shown below.
-</div>
+The GNN charge model is the main difference between Sage 2.2.1 and 2.3.0. Here, we'll compare the parameterisation speed and charges obtained using each force field.
 
 
 ```python
-from openff.toolkit import Molecule, ForceField
-from openff.toolkit.utils.nagl_wrapper import NAGLToolkitWrapper
+from openff.toolkit import Molecule
 
-# Disable RDKit warnings to avoid misleading NAGL warnings
-# (see https://github.com/openforcefield/openff-nagl/issues/198)
-from rdkit import RDLogger
-RDLogger.DisableLog('rdApp.*')   
-
-# OpenFF NAGL store models as PyTorch files.
-ASH_GC_MODEL = "openff-gnn-am1bcc-0.1.0-rc.3.pt"
 molecule = Molecule("../structures/6o6f_ligand.sdf")
 ```
 
-
-```python
-molecule.assign_partial_charges?
-```
-
-First, let's assign charges the traditional way with AM1-BCC and check how long this takes...
+First, let's parameterise with Sage 2.2.1, which uses the traditional AM1-BCC model, and check how long this takes...
 
 
 ```python
 %%time
-molecule_am1bcc = Molecule(molecule)
-molecule_am1bcc.assign_partial_charges(
-    partial_charge_method="am1bcc",
-)
+sage221 = ForceField("openff-2.2.1.offxml")
+interchange_sage221 = Interchange.from_smirnoff(force_field=sage221, topology=molecule.to_topology())
 ```
 
-    CPU times: user 64.1 ms, sys: 7.24 ms, total: 71.3 ms
-    Wall time: 22.6 s
+    CPU times: user 245 ms, sys: 6.57 ms, total: 252 ms
+    Wall time: 14.9 s
 
 
-Now, let's try AshGC
+Note that repeating these cells will show much faster assignment as partial charges are cached for a given molecule and charge method.
+
+Now, let's try Sage 2.3.0, which uses AshGC charges:
 
 
 ```python
 %%time
-molecule_ashgc = Molecule(molecule)
-molecule_ashgc.assign_partial_charges(
-    partial_charge_method=ASH_GC_MODEL,
-    toolkit_registry=NAGLToolkitWrapper(),
-)
+sage230 = ForceField("openff-2.3.0.offxml")
+interchange_sage230 = Interchange.from_smirnoff(force_field=sage230, topology=molecule.to_topology())
 ```
 
-    CPU times: user 1.13 s, sys: 32.9 ms, total: 1.17 s
-    Wall time: 1.1 s
+    CPU times: user 1.29 s, sys: 20.6 ms, total: 1.31 s
+    Wall time: 1.25 s
 
-
-Finally, let's create an `Interchange` with our AshGC charges, making sure to specify `charge_from_molecules` so that we don't replace them with `AM1BCC` charges:
-
-
-```python
-# normally when we call `ForceField.create_interchange` or `ForceField.create_openmm_system`, the toolkit will call
-# AMBERTools or OEChem to assign partial charges, since that's what's in the force field file. A future OpenFF release
-# which uses NAGL for charge assignment will encode this instruction in the force field file itself, but until that we
-# can use the `charge_from_molecules` argument to tell it to use the charges that we just assigned# for more, see:
-# https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.typing.engines.smirnoff.ForceField.html#openff.toolkit.typing.engines.smirnoff.ForceField.create_openmm_system
-interchange = sage.create_interchange(
-    molecule_ashgc.to_topology(),
-    charge_from_molecules=[molecule_ashgc],
-)
-```
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
-    ✏️ <b>Exercise:</b> Compare the charges obtained with AM1-BCC and AshGC by looking at the <code>Molecule.partial_charges</code> attribute. How big are these differences on average? What is the largest difference? Which atom are these on? The <code>np.max</code> function may be useful.
+    ✏️ <b>Exercise:</b> Compare the charges obtained with AM1-BCC and AshGC by inspecting the electrostatics collection of each <code>Interchange</code> object (see Section 3). How big are these differences on average? What is the largest difference? Which atom are these on? The <code>np.max</code> function may be useful.
 </div>
 
 
 ```python
-# Compare charges assigned with AM1-BCC and AshGC...
+# Compare charges assigned with AM1-BCC (Sage 2.2.1) and AshGC (Sage 2.3.0)...
 import numpy as np
-print(f"AM1 BCC charges: {molecule_am1bcc.partial_charges}")
-print(f"AshGC charges:   {molecule_ashgc.partial_charges}")
 
-differences = molecule_am1bcc.partial_charges - molecule_ashgc.partial_charges
-differences_by_atom_index = {idx: diff.magnitude for idx, diff in enumerate(differences)}
-print(f"Differences by atom index: {differences_by_atom_index}")
+charges_am1bcc = np.array([c.m for c in interchange_sage221["Electrostatics"].charges.values()])
+charges_ashgc = np.array([c.m for c in interchange_sage230["Electrostatics"].charges.values()])
 
-max_difference = np.max(np.abs(differences.magnitude))
-print(f"Max difference: {max_difference} e")
+differences = charges_am1bcc - charges_ashgc
+print(f"Mean absolute difference: {np.mean(np.abs(differences)):.4f} e")
 
-mean_difference = np.mean(np.abs(differences.magnitude))
-print(f"Mean absolute difference: {mean_difference} e")
-
-# Get the atom index with the largest difference
-atom_index = np.argmax(np.abs(differences.magnitude))
-print(f"Largest absolute difference is for atom index {atom_index}, which is a {molecule_ashgc.atoms[atom_index].symbol} atom")
+max_index = int(np.argmax(np.abs(differences)))
+print(
+    f"Largest absolute difference is {np.abs(differences[max_index]):.4f} e, "
+    f"for atom index {max_index}, which is a {molecule.atoms[max_index].symbol} atom"
+)
 ```
 
-    AM1 BCC charges: [-0.12740000000000004 -0.8283 -0.8283 -0.33690000000000003 -0.633 0.14839999999999998 0.19979999999999998 0.20379999999999998 -0.09940000000000004 -0.13500000000000004 -0.15200000000000002 -0.09040000000000004 -0.09040000000000004 -0.11100000000000004 -0.07100000000000004 -0.03410000000000003 -0.12800000000000003 -0.13800000000000004 -0.07840000000000004 0.9082 0.012399999999999965 0.04109999999999996 0.059599999999999966 -0.11570000000000004 -0.11560000000000004 -0.09030000000000005 -0.053300000000000035 -0.03870000000000003 0.04569999999999996 0.04569999999999996 0.056699999999999966 0.056699999999999966 0.03769999999999996 0.03769999999999996 0.039199999999999964 0.039199999999999964 0.14199999999999996 0.12199999999999996 0.049699999999999966 0.049699999999999966 0.049699999999999966 0.049699999999999966 0.15599999999999997 0.18099999999999997 0.047699999999999965 0.047699999999999965 0.13699999999999998 0.16099999999999998 0.04469999999999996 0.04469999999999996 0.08069999999999995] elementary_charge
-    AshGC charges:   [-0.10291757708524957 -0.8212745068046976 -0.8212745068046976 -0.3278780457947184 -0.656814920661204 0.13626032793784842 0.22055995190406547 0.2206000658299993 -0.09947414970134988 -0.14171894168590798 -0.17288624024128213 -0.09598572826122537 -0.09598569845890298 -0.0818095085594584 -0.1024471399757792 -0.04326643323635354 -0.12058025872444406 -0.08199206268524423 -0.07742916321491494 0.9052312495734762 0.027429900186903337 0.0331591638352941 0.0954736592795919 -0.10021315043901696 -0.1429999051067759 -0.07631889259552255 -0.09621359681820169 -0.03022590180968537 0.044725027921445226 0.044725027921445226 0.03946309262777076 0.03946309262777076 0.03401340270305381 0.03401340270305381 0.04491722309852347 0.04491722309852347 0.14514142000938163 0.11216316843295798 0.047582616153008794 0.047582616153008794 0.047582616153008794 0.047582616153008794 0.15584553504253135 0.13253731751704917 0.056406603249556875 0.056406603249556875 0.14515182101989493 0.1600255640771459 0.05733717704082236 0.05733717704082236 0.05607166612411246] elementary_charge
-    Differences by atom index: {0: np.float64(-0.024482422914750473), 1: np.float64(-0.007025493195302435), 2: np.float64(-0.007025493195302435), 3: np.float64(-0.009021954205281624), 4: np.float64(0.023814920661203942), 5: np.float64(0.012139672062151552), 6: np.float64(-0.020759951904065488), 7: np.float64(-0.016800065829999322), 8: np.float64(7.41497013498349e-05), 9: np.float64(0.006718941685907948), 10: np.float64(0.020886240241282106), 11: np.float64(0.005585728261225331), 12: np.float64(0.0055856984589029435), 13: np.float64(-0.029190491440541644), 14: np.float64(0.031447139975779165), 15: np.float64(0.009166433236353508), 16: np.float64(-0.007419741275555974), 17: np.float64(-0.05600793731475581), 18: np.float64(-0.0009708367850850969), 19: np.float64(0.0029687504265237807), 20: np.float64(-0.015029900186903372), 21: np.float64(0.00794083616470586), 22: np.float64(-0.03587365927959193), 23: np.float64(-0.015486849560983076), 24: np.float64(0.027399905106775868), 25: np.float64(-0.0139811074044775), 26: np.float64(0.04291359681820165), 27: np.float64(-0.008474098190314663), 28: np.float64(0.0009749720785547367), 29: np.float64(0.0009749720785547367), 30: np.float64(0.01723690737222921), 31: np.float64(0.01723690737222921), 32: np.float64(0.003686597296946155), 33: np.float64(0.003686597296946155), 34: np.float64(-0.005717223098523509), 35: np.float64(-0.005717223098523509), 36: np.float64(-0.003141420009381668), 37: np.float64(0.009836831567041973), 38: np.float64(0.002117383846991172), 39: np.float64(0.002117383846991172), 40: np.float64(0.002117383846991172), 41: np.float64(0.002117383846991172), 42: np.float64(0.0001544649574686252), 43: np.float64(0.0484626824829508), 44: np.float64(-0.00870660324955691), 45: np.float64(-0.00870660324955691), 46: np.float64(-0.00815182101989495), 47: np.float64(0.0009744359228540667), 48: np.float64(-0.0126371770408224), 49: np.float64(-0.0126371770408224), 50: np.float64(0.02462833387588749)}
-    Max difference: 0.05600793731475581 e
-    Mean absolute difference: 0.013057460803529108 e
-    Largest absolute difference is for atom index 17, which is a C atom
+    Mean absolute difference: 0.0131 e
+    Largest absolute difference is 0.0560 e, for atom index 17, which is a C atom
 
 
 <a id="summary"></a>
@@ -834,8 +876,8 @@ A variety of example notebooks for OpenFF software are provided [here](https://d
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
     ✏️ <b>Extra Exercises:</b> Based on the above tutorials, can you:
             <ul>
-            <li>Generate several conformers for one of your MCL-1 ligands and compute their relative energies using OpenFF 2.2.1?</li>
-            <li>Modify OpenFF 2.2.1 to change some of the parameters applied to one of your MCL-1 ligands? Minimise the ligand with this new force field and see how your changes influence the conformation.</li>
+            <li>Generate several conformers for one of your MCL-1 ligands and compute their relative energies using OpenFF 2.3.0?</li>
+            <li>Modify OpenFF 2.3.0 to change some of the parameters applied to one of your MCL-1 ligands? Minimise the ligand with this new force field and see how your changes influence the conformation.</li>
             <li>Analyse which parameters are shared and which are only applied to one or few molecules for a set of MCL-1 ligands?</li>
             </ul>
 </div>
