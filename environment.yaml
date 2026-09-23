@@ -9,6 +9,7 @@ dependencies:
     # NOTE: packmol is not listed explicitly - ambertools >=23.6 bundles it and
     # declares a conflict with the standalone packmol package. Listing both pins
     # the solve back to ambertools 23.3, which has no Python 3.13 build.
+    - rdkit==2024.09.6 # Newer versions hand on Topology.from_pdb in the protein-ligand notebook
     - ambertools >=23.6  # Needed for AM1-BCC charge assignment comparison, and provides packmol
     - MDAnalysis
     - prolif
