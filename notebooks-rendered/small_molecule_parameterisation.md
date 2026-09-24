@@ -37,6 +37,10 @@ Most of this material was adapted from the [2023 CCPBioSim Workshop Open Force F
 <a id="showcase"></a>
 ## 0. You can go from SMILES to simulation in a few lines of code
 
+[SMILES](https://www.daylight.com/dayhtml/doc/theory/theory.smiles.html), or Simplified Molecular Input Line Entry System, is a line notation (a typographical method using printable characters) for entering and representing molecules and reactions. You can produce SMILES strings from a 2D drawing of your molecule interest [here](http://moldraw.com/tools/free-chem-tools/structure-to-smiles-converter.html), for example.
+
+The OpenFF toolkit allows you to create `Molecule` and `ForceField` objects, which get combined into an `Interchange` object, which contains all the information needed to start a simulation. From there, you can create input for the simulation engine of your choice (OpenMM in this case).
+
 
 ```python
 # Go from SMILES -> simulation input with OpenFF
@@ -48,7 +52,7 @@ topology = Topology.from_molecules([molecule])
 
 force_field = ForceField("openff-2.3.0.offxml")
 interchange = force_field.create_interchange(topology)
-interchange.minimize()
+interchange.minimize() # energy minimisation -- the coordinates are relaxed to a nearby local minimum
 
 openmm_system = interchange.to_openmm_system()
 openmm_topology = interchange.to_openmm_topology()
@@ -108,10 +112,6 @@ That's it! You've run a vacuum simulation for paracetamol. Below and in the next
 <a id="loading_ff"></a>
 ## 1. Force fields are specified in `.offxml` files and can be loaded with the `ForceField` class
 
-Let's dive into the details of what went on above. Here's a summary of how data flows through a workflow utilising OpenFF tools -- the OpenFF toolkit allows you to create `Molecule` and `ForceField` objects, which get combined into an `Interchange` object, which contains all the information needed to start a simulation. From there, you can create input for the simulation engine of your choice:
-
-<img src="../images/openff_flowchart.png" alt="Description of image" style="max-width: 1000px; display: block; margin-left: auto; margin-right: auto;" />
-
 Let's start with the `.offxml` force field file. OpenFF's force fields use the SMIRKS Native Open Force Field (SMIRNOFF) [specification](https://openforcefield.github.io/standards/standards/smirnoff/). The spec fully describes the contents of a SMIRNOFF force field, how parameters should be applied, and several other important usage details. You could implement a SMIRNOFF engine in your own code, but conveniently the OpenFF Toolkit already provides this and a handful of utilities. Let's load up the latest OpenFF small molecule force field, OpenFF 2.3.0, and inspect its contents! This force field shares the code name "Sage" with all other force fields with the same major version number (2.x.x).
 
 
@@ -125,7 +125,7 @@ sage
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7f9a04273750>
+    <openff.toolkit.typing.engines.smirnoff.forcefield.ForceField at 0x7f6b2b7dfb10>
 
 
 
@@ -147,7 +147,7 @@ vdw_handler
 
 
 
-    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7f9a039af610>
+    <openff.toolkit.typing.engines.smirnoff.parameters.vdWHandler at 0x7f6b2a9b82d0>
 
 
 
@@ -276,7 +276,7 @@ molecule
 
 
     
-![svg](output_17_0.svg)
+![svg](output_18_0.svg)
     
 
 
@@ -365,9 +365,13 @@ We will cover creating a topology for a protein-ligand complex in the next noteb
 <a id="interchange"></a>
 ## 3. `Interchange` objects contain fully parameterised systems with all the information needed to start a simulation
 
-Now we've specified our force field and our chemical system using classes from the OpenFF Tools package (`ForceField`, `Molecule`, and `Topology`), and we want to apply our force field to our chemical topologies (parameterisation).
+Now that we've specified our force field and our chemical system using classes from the OpenFF Tools package (`ForceField`, `Molecule`, and `Topology`), we want to apply the force field to our chemical topologies (a process known as parameterisation).
 
-To do this, we'll use the `Interchange` class from the OpenFF Interchange package, which stores a fully-parameterised molecular system and provides methods to write out simulation-ready input files for a number of software packages. They key objective of Interchange is to provide an intermediate inspectable state after parameterisation and before conversion to an engine-specific format. For most users, an `Interchange` forms the bridge between the OpenFF ecosystem and their simulation software of choice. The current focus is applying SMIRNOFF force fields to chemical topologies and exporting the result to engines preferred by our users. In order of stability, OpenMM, GROMACS, Amber, and LAMMPS are supported. Future development may include support for CHARMM and other engines.
+To do this, we'll use the `Interchange` class from the OpenFF Interchange package. They key objective of Interchange is to provide an intermediate inspectable state after parameterisation and before conversion to an engine-specific format. It can also be thought of as a translator between the OpenFF ecosystem and your simulation engine of choice: it takes the chemical and force-field information expressed in OpenFF `Molecule`, `Topology` and `ForceField` classes, combines them into into a fully parameterised system, and translates that system into an engine-specific simulation-ready input files.
+
+The current focus is applying SMIRNOFF force fields to chemical topologies and exporting the result to engines preferred by our users. In order of stability, OpenMM, GROMACS, Amber, and LAMMPS are supported. Future development may include support for CHARMM and other engines.
+
+<img src="../images/openff_flowchart.png" alt="Description of image" style="max-width: 1000px; display: block; margin-left: auto; margin-right: auto;" />
 
 First, let's recreate our `molecule` and `topology` in case you overwrote them during the previous exercises:
 
@@ -504,7 +508,7 @@ SVG(mol_with_atom_index(molecule))
 
 
     
-![svg](output_44_0.svg)
+![svg](output_46_0.svg)
     
 
 
@@ -771,7 +775,7 @@ visualise_traj(interchange.topology)
 
 
 
-    NGLWidget(max_frame=29)
+    NGLWidget(max_frame=25)
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">
@@ -811,8 +815,8 @@ sage221 = ForceField("openff-2.2.1.offxml")
 interchange_sage221 = Interchange.from_smirnoff(force_field=sage221, topology=molecule.to_topology())
 ```
 
-    CPU times: user 235 ms, sys: 5.69 ms, total: 240 ms
-    Wall time: 17.7 s
+    CPU times: user 297 ms, sys: 0 ns, total: 297 ms
+    Wall time: 20.4 s
 
 
 Note that repeating these cells will show much faster assignment as partial charges are cached for a given molecule and charge method.
@@ -826,8 +830,8 @@ sage230 = ForceField("openff-2.3.0.offxml")
 interchange_sage230 = Interchange.from_smirnoff(force_field=sage230, topology=molecule.to_topology())
 ```
 
-    CPU times: user 1.01 s, sys: 26.5 ms, total: 1.03 s
-    Wall time: 967 ms
+    CPU times: user 1.23 s, sys: 19.1 ms, total: 1.25 s
+    Wall time: 1.16 s
 
 
 <div class="alert alert-success" style="max-width: 500px; margin-left: auto; margin-right: auto; border-left: 6px solid #5cb85c; background-color: #f1fff1;">

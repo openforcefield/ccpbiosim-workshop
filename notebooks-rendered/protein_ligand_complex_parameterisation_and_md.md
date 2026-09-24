@@ -1,6 +1,7 @@
 # Parameterisation, Molecular Dynamics, and Trajectory Analysis of a Protein-Ligand Complex with OpenFF, OpenMM, MDAnalysis, and ProLIF
 
 This is the second of two jupyter notebooks on handling force fields using [Open Force Field's](https://openforcefield.org/) software, and subsequent molecular dynamics and analysis. The first notebook (`small_molecule_parameterisation.ipynb`) introduced fundamental concepts in OpenFF and demonstrated parameterisation of a small molecule.
+
 This notebook demonstrates how to prepare a system that combines solvent, a ligand using Sage, and a protein using a standard AMBER force field. We'll take the structures of the MCL-1 and the bound ligand from the crystal structure, but we could just as easily use a ligand pose from docking. We'll solvate the complex, assemble the system, parameterise it, and finally simulate it with OpenMM and visualize the results, all without leaving the notebook. Have fun!
 
 ### Prerequisites
@@ -47,7 +48,7 @@ We'll be using the MCL-1 complex with PDBID `6o6f`. MCL-1 is a common system for
 
 As we've already covered structure preparation, we provide pre-prepared protein and ligand structures in the `structures` directory. These are ready for simulation:
 
-- Their co-ordinates are super-imposable (and there are no clashes between waters and the ligand)
+- Their co-ordinates are super-imposable (and there are no clashes between water molecules and the ligand)
 - Hydrogens have been added to protein and crystallographic waters consistent with pH 7
 - The protein's termini have been capped where appropriate to prevent unphysical charges
 - A missing residue in the middle of the chain has been added
@@ -96,7 +97,7 @@ Conceptually, this step involves putting together the positions of all of the co
 
 First, we'll load the ligand and receptor into OpenFF Toolkit [`Molecule`] objects, which keep track of all their chemical information. As discussed previously, `Molecule` represents a collection of atoms with specified formal charges, connected by bonds with specified bond orders, optionally including any number of conformer coordinates. This is intended to closely align with a chemist's intuitive understanding of a molecule, rather than simply wrap the minimal information needed for a calculation.
 
-Structure data files (SDFs) include all a molecule's bond orders and formal charges, as well as coordinates, so they're ideal as a format for distributing small molecules. And that's exactly the format the ligand is stored in!
+Structure data files (SDFs) include all of a molecule's bond orders and formal charges, as well as coordinates, so they're ideal as a format for distributing small molecules. And that's exactly the format the ligand is stored in!
 
 [`Molecule`]: https://docs.openforcefield.org/projects/toolkit/en/stable/api/generated/openff.toolkit.topology.Molecule.html
 
@@ -359,10 +360,10 @@ describe_state(
 )
 ```
 
-    Original state has energy 14441273.68 kJ/mol with maximum force 1367209099.85 kJ/(mol nm)
+    Original state has energy 14441257.72 kJ/mol with maximum force 1367206592.41 kJ/(mol nm)
 
 
-    Minimized state has energy -436648.18 kJ/mol with maximum force 2445.53 kJ/(mol nm)
+    Minimized state has energy -436057.84 kJ/mol with maximum force 2445.23 kJ/(mol nm)
 
 
 ### 4.3 Run a short simulation
